@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit Report — {{PAGE}}</title>
+<style>
+  :root{--bg:#0c1118;--panel:#141b26;--line:rgba(255,255,255,.09);--ink:#e9edf2;--dim:#9aa6b6;--teal:#36c7b7;--amber:#e8b04b;--rust:#e0603f;--red:#e0473f;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1000px;margin:0 auto;padding:40px 24px 80px;}
+  h1{font-size:26px;margin:0 0 4px;}
+  .meta{color:var(--dim);font-size:13px;margin-bottom:28px;}
+  .meta b{color:var(--ink);}
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 34px;}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 18px;min-width:120px;}
+  .stat .n{font-size:24px;font-weight:700;}
+  .stat .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);}
+  h2{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);padding-bottom:8px;margin:38px 0 16px;}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th,td{text-align:left;padding:10px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);}
+  td.n{font-variant-numeric:tabular-nums;color:var(--dim);width:34px;}
+  .sev{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;}
+  .sev.Foundational{background:rgba(224,71,63,.16);color:var(--red);}
+  .sev.High{background:rgba(224,96,63,.16);color:var(--rust);}
+  .sev.Medium{background:rgba(232,176,75,.16);color:var(--amber);}
+  .sev.Low{background:rgba(154,166,182,.16);color:var(--dim);}
+  .ev{font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:4px;border:1px solid var(--line);color:var(--dim);}
+  .ev.verified{color:var(--teal);border-color:rgba(54,199,183,.4);}
+  .ev.opinion{color:var(--amber);border-color:rgba(232,176,75,.4);}
+  .lenses{font-size:11px;color:var(--dim);}
+  .conflict{font-size:12px;color:var(--amber);margin-top:4px;}
+  .first li,.win li{margin:6px 0;}
+  .first{background:rgba(224,71,63,.07);border:1px solid rgba(224,71,63,.25);border-radius:8px;padding:14px 18px 14px 36px;}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-top:10px;padding:0 16px;}
+  summary{cursor:pointer;padding:14px 0;font-size:13px;color:var(--dim);}
+  .warn{background:rgba(232,176,75,.1);border:1px solid rgba(232,176,75,.3);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--amber);margin-bottom:20px;}
+  .drop{color:var(--dim);font-size:14px;}
+  code{background:#0a0e14;padding:1px 6px;border-radius:4px;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Audit Report</h1>
+  <div class="meta"><b>{{PAGE}}</b> · generated {{GENERATED}} · mode: {{MODE}}</div>
+
+  {{WARNINGS_BLOCK}}  <!-- one .warn div per failed lens, or empty -->
+
+  <div class="stats">
+    <div class="stat"><div class="n">{{RAW}}</div><div class="l">raw findings</div></div>
+    <div class="stat"><div class="n">{{MERGED}}</div><div class="l">after merge</div></div>
+    <div class="stat"><div class="n">{{DOFIRST}}</div><div class="l">do first</div></div>
+    <div class="stat"><div class="n">{{QUICK}}</div><div class="l">quick wins</div></div>
+  </div>
+
+  <h2>Do first</h2>
+  <ul class="first">{{DO_FIRST_ITEMS}}</ul>  <!-- li per do_first task: "N. task" -->
+
+  <h2>Build order</h2>
+  <table>
+    <thead><tr><th>#</th><th>Task</th><th>Lenses</th><th>Severity</th><th>Depends</th><th>Effort</th><th>Evidence</th></tr></thead>
+    <tbody>
+      {{BUILD_ROWS}}
+    </tbody>
+  </table>
+
+  <h2>Quick wins</h2>
+  <ul class="win">{{QUICK_ITEMS}}</ul>
+
+  <h2>Defer / drop</h2>
+  <div class="drop">{{DEFER_ITEMS}}</div>  <!-- "task — reason" per line -->
+
+  <h2>Root causes</h2>
+  <div class="drop">{{ROOT_CAUSES}}</div>
+
+  <h2>Appendix — raw findings by lens</h2>
+  {{LENS_APPENDIX}}  <!-- one <details><summary>LENS</summary>...table...</details> per lens; optional -->
+</div>
+</body>
+</html>

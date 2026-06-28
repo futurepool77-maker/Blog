@@ -1,0 +1,4 @@
+node_modules/
+# Generated reports/briefs — keep the dir, ignore the artifacts.
+output/*
+!output/.gitkeep
