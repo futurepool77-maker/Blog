@@ -1,4 +1,10 @@
 node_modules/
+
+# Secrets — never commit your real key. Keep the .example template.
+.env
+.env.*
+!.env.example
+
 # Generated reports/briefs — keep the dir, ignore the artifacts.
 output/*
 !output/.gitkeep

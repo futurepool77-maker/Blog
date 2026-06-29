@@ -1,6 +1,9 @@
 // Thin Anthropic Messages client. The assembled prompt goes in a single user
 // message. Web search is attached only when requested.
 
+// Side-effect import: populate process.env from .env before the key is read.
+import "./env.js";
+
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const WEB_SEARCH_TOOL = { type: "web_search_20250305", name: "web_search" };
