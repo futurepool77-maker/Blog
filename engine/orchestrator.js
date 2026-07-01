@@ -31,9 +31,15 @@ async function loadPrompt(file) {
   return text;
 }
 
-// Assembly order per lens call: lens body, then shared block, then article.
-function assembleLensPrompt(lensBody, sharedBlock, article) {
-  return `${lensBody}\n\n${sharedBlock}${ARTICLE_DELIM}${article}`;
+// Assembly order per lens call: identity, lens body, shared block, article.
+// The identity line pins the exact "lens" value and id prefix so the model does
+// not invent its own label (the shared block only shows <LENS_TAG> as a slot).
+function assembleLensPrompt(meta, lensBody, sharedBlock, article) {
+  const identity =
+    `You are the ${meta.name} lens (tag: ${meta.tag}). In the JSON you return, ` +
+    `set "lens" to exactly "${meta.name}" and prefix every finding id with ` +
+    `"${meta.tag}-" (for example ${meta.tag}-01). Use no other lens name or id prefix.\n\n`;
+  return `${identity}${lensBody}\n\n${sharedBlock}${ARTICLE_DELIM}${article}`;
 }
 
 function modelFor(lensKey) {
@@ -66,7 +72,7 @@ async function mapWithLimit(items, limit, worker) {
 async function runLens(lensKey, article, sharedBlock, log) {
   const meta = LENS_META[lensKey];
   const lensBody = await loadPrompt(meta.file);
-  const prompt = assembleLensPrompt(lensBody, sharedBlock, article);
+  const prompt = assembleLensPrompt(meta, lensBody, sharedBlock, article);
   const model = modelFor(lensKey);
   const webSearch = webSearchFor(lensKey);
 
@@ -99,8 +105,11 @@ async function runCompetitor(article, competitorContent, sharedBlock, log) {
   if (!competitorContent) return { ok: false, skipped: true };
   const meta = LENS_META.competitor;
   const body = await loadPrompt(meta.file);
+  const identity =
+    `You are the ${meta.name} lens (tag: ${meta.tag}). In the JSON you return, ` +
+    `set "lens" to exactly "${meta.name}" and prefix every finding id with "${meta.tag}-".\n\n`;
   const prompt =
-    `${body}\n\n${sharedBlock}${ARTICLE_DELIM}${article}${COMPETITOR_DELIM}${competitorContent}`;
+    `${identity}${body}\n\n${sharedBlock}${ARTICLE_DELIM}${article}${COMPETITOR_DELIM}${competitorContent}`;
 
   log(`  → COMPETITOR (${config.MODEL_STANDARD})`);
   const callWith = (suffix = "") =>
@@ -140,7 +149,7 @@ async function reconcile(page, lensOutputs, mode, log) {
       model: config.MODEL_STANDARD,
       prompt: prompt + suffix,
       webSearch: false,
-      maxTokens: config.MAX_TOKENS,
+      maxTokens: config.MAX_TOKENS_RECONCILE,
     });
 
   const raw = await callWith("");
@@ -222,14 +231,45 @@ export async function audit(opts) {
     throw new Error("Every lens failed to return valid output; nothing to reconcile.");
   }
 
+  const base = opts.out
+    ? opts.out.replace(/\.html?$/i, "")
+    : join(OUTPUT_DIR, `${slugify(page)}-${timestamp()}`);
+
+  // Cache the (expensive) lens outputs before reconciling, so a reconcile
+  // failure never forces re-running the lenses. Resume with --reconcile-only.
+  const cachePath = `${base}.lenses.json`;
+  await mkdir(dirname(cachePath), { recursive: true });
+  await writeFile(
+    cachePath,
+    JSON.stringify({ page, mode, failedLenses, lens_outputs: lensOutputs }, null, 2),
+    "utf8"
+  );
+  log(`  · lens outputs cached → ${cachePath}`);
+
+  // 3-5. Reconcile, render, write.
+  return finalizeAudit({
+    page,
+    mode,
+    lensOutputs,
+    failedLenses,
+    out: opts.out || `${base}.html`,
+    log,
+  });
+}
+
+// Reconcile + render + write, given already-collected lens outputs. Split out
+// so it can be re-run from the cache without repeating the lens calls.
+// opts: { page, mode, lensOutputs, failedLenses?, out?, log? }
+export async function finalizeAudit(opts) {
+  const log = opts.log || (() => {});
+  const { page, mode, lensOutputs } = opts;
+  const failedLenses = opts.failedLenses || [];
+
   // 3. Reconcile — the only step that sees all lens outputs at once.
   const reconciled = await reconcile(page, lensOutputs, mode, log);
 
   // 4. Render deterministically.
-  const html = await renderHtml(reconciled, {
-    lensOutputs,
-    failedLenses,
-  });
+  const html = await renderHtml(reconciled, { lensOutputs, failedLenses });
 
   // 5. Write to /output/<slug>-<timestamp>.html
   const outPath = opts.out || join(OUTPUT_DIR, `${slugify(page)}-${timestamp()}.html`);
@@ -237,6 +277,19 @@ export async function audit(opts) {
   await writeFile(outPath, html, "utf8");
 
   return { path: outPath, reconciled, failedLenses };
+}
+
+// Load a cached lens-outputs sidecar and finalize from it (resume path).
+export async function reconcileOnly(cachePath, out, log) {
+  const cached = JSON.parse(await readFile(cachePath, "utf8"));
+  return finalizeAudit({
+    page: cached.page,
+    mode: cached.mode,
+    lensOutputs: cached.lens_outputs,
+    failedLenses: cached.failedLenses || [],
+    out,
+    log,
+  });
 }
 
 // --- Mode A: blueprint a new article ----------------------------------------

@@ -7,7 +7,7 @@
 
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import { audit } from "../engine/orchestrator.js";
+import { audit, reconcileOnly } from "../engine/orchestrator.js";
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -17,6 +17,7 @@ function parseArgs(argv) {
     else if (a === "--competitor") args.competitor = argv[++i];
     else if (a === "--out") args.out = argv[++i];
     else if (a === "--page") args.page = argv[++i];
+    else if (a === "--reconcile-only") args.reconcileOnly = argv[++i];
     else if (a === "-h" || a === "--help") args.help = true;
     else args._.push(a);
   }
@@ -51,12 +52,25 @@ Options:
   --competitor <url_or_path>  run the competitor side-tool and fold it into reconcile
   --page <identifier>         page label for the report (default: derived from content)
   --out <path>                output HTML path (default: output/<slug>-<timestamp>.html)
+  --reconcile-only <file>     skip the lenses; re-reconcile + render from a cached
+                              .lenses.json (resume a run without re-spending on lenses)
   -h, --help                  show this help
 
 Reads from stdin when the path is "-".`;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  // Resume path: reconcile + render from a cached lens-outputs sidecar.
+  if (args.reconcileOnly) {
+    const result = await reconcileOnly(args.reconcileOnly, args.out, (m) => console.error(m));
+    if (result.failedLenses.length) {
+      console.error(`\nNote: ${result.failedLenses.length} lens(es) were skipped in the cached run.`);
+    }
+    console.log(result.path);
+    return;
+  }
+
   if (args.help || !args._.length) {
     console.log(HELP);
     process.exit(args.help ? 0 : 1);

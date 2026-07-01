@@ -28,15 +28,14 @@ function tryParse(raw) {
   }
 }
 
-// Schema check for a lens output. Returns { ok, error }.
-function checkLensSchema(obj, meta) {
+// Hard structural check for a lens output — only fails on things that make the
+// output unusable. The lens LABEL and finding-ID PREFIX are NOT hard-checked
+// here; since the engine already knows which lens it invoked, those are
+// normalized in coerceLens rather than rejected (a cosmetic mislabel should not
+// throw away a full lens of good findings).
+function checkLensSchema(obj) {
   if (typeof obj !== "object" || obj === null) return { ok: false, error: "not an object" };
   if (typeof obj.lens !== "string") return { ok: false, error: "missing 'lens'" };
-
-  const lensVal = obj.lens.trim().toUpperCase();
-  if (lensVal !== meta.name && lensVal !== meta.tag) {
-    return { ok: false, error: `lens '${obj.lens}' != expected ${meta.name}/${meta.tag}` };
-  }
   if (!("calibration" in obj)) return { ok: false, error: "missing 'calibration'" };
   if (!Array.isArray(obj.findings)) return { ok: false, error: "'findings' is not an array" };
   if (!("root_cause" in obj)) return { ok: false, error: "missing 'root_cause'" };
@@ -44,9 +43,6 @@ function checkLensSchema(obj, meta) {
 
   for (const f of obj.findings) {
     if (typeof f.id !== "string") return { ok: false, error: "a finding is missing 'id'" };
-    if (!f.id.toUpperCase().startsWith(meta.tag + "-")) {
-      return { ok: false, error: `finding id '${f.id}' not prefixed with ${meta.tag}-` };
-    }
     if (!f.evidence || typeof f.evidence.type !== "string") {
       return { ok: false, error: `finding '${f.id}' missing evidence.type` };
     }
@@ -55,6 +51,23 @@ function checkLensSchema(obj, meta) {
     }
   }
   return { ok: true };
+}
+
+// Normalize the lens label and finding IDs to this lens's canonical tag/name,
+// so reconciliation's merged_from stays traceable regardless of what the model
+// called itself. Keeps the numeric suffix of an existing "PREFIX-NN" id.
+function coerceLens(obj, meta) {
+  obj.lens = meta.name;
+  obj.findings = obj.findings.map((f, i) => {
+    let id = String(f.id);
+    if (!id.toUpperCase().startsWith(meta.tag + "-")) {
+      const dash = id.indexOf("-");
+      const suffix = dash !== -1 ? id.slice(dash + 1) : String(i + 1).padStart(2, "0");
+      id = `${meta.tag}-${suffix}`;
+    }
+    return { ...f, id };
+  });
+  return obj;
 }
 
 // Schema check for the reconciled output. Returns { ok, error }.
@@ -73,11 +86,14 @@ function checkReconcileSchema(obj) {
 
 // Generic validate-with-one-retry. `caller` re-invokes the model with an
 // appended prompt; on any failure after the single retry, returns
-// { ok:false, error }. Never throws on bad model output.
-async function validateWithRetry({ raw, check, caller }) {
+// { ok:false, error }. Never throws on bad model output. `coerce` (optional)
+// normalizes an otherwise-valid object before returning.
+async function validateWithRetry({ raw, check, caller, coerce }) {
+  const finish = (obj) => ({ ok: true, obj: coerce ? coerce(obj) : obj });
+
   let parsed = tryParse(raw);
   let schema = parsed.ok ? check(parsed.obj) : { ok: false, error: parsed.error };
-  if (parsed.ok && schema.ok) return { ok: true, obj: parsed.obj };
+  if (parsed.ok && schema.ok) return finish(parsed.obj);
 
   // One retry with the corrective instruction.
   const retryRaw = await caller(RETRY_INSTRUCTION);
@@ -85,13 +101,18 @@ async function validateWithRetry({ raw, check, caller }) {
   if (!parsed.ok) return { ok: false, error: parsed.error };
   schema = check(parsed.obj);
   if (!schema.ok) return { ok: false, error: schema.error };
-  return { ok: true, obj: parsed.obj };
+  return finish(parsed.obj);
 }
 
 // Validate a lens response. `caller(suffix)` must re-run the same lens prompt
 // with `suffix` appended and return the raw string.
 export function validateLensJson({ raw, meta, caller }) {
-  return validateWithRetry({ raw, check: (o) => checkLensSchema(o, meta), caller });
+  return validateWithRetry({
+    raw,
+    check: checkLensSchema,
+    coerce: (o) => coerceLens(o, meta),
+    caller,
+  });
 }
 
 // Validate the reconciliation response.

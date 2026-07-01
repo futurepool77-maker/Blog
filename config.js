@@ -18,8 +18,12 @@ export const config = {
   // Fan-out concurrency. Lenses are independent; cap to respect rate limits.
   MAX_PARALLEL: 4,
 
-  // Per-call output ceiling.
-  MAX_TOKENS: 8000,
+  // Per-lens output ceiling.
+  MAX_TOKENS: 16000,
+  // Reconciliation merges every lens's findings into one build order, so it
+  // needs a far bigger output budget than a single lens — too small a ceiling
+  // truncates the JSON mid-array.
+  MAX_TOKENS_RECONCILE: 32000,
 
   // Lens sets per mode.
   MODES: {
